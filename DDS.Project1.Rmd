@@ -1,0 +1,338 @@
+---
+title: "DDS_Project1.Rmd"
+author: "Wachira"
+date: "2024-03-06"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+```{r}
+### DDS Project 1 EDA ####
+## load libraires and install.packages() when necessary
+library(ggplot2)
+library(dplyr)
+library(stringr)
+library(gganimate)
+library(RColorBrewer)
+# Set the CRAN mirror directly
+options(repos = "https://cloud.r-project.org")
+
+# Install required packages
+install.packages("class")
+
+
+
+# Read in the beer and brewery data sets
+Beers = read.csv("/Users/christywachira/Downloads/Beers.csv", header = TRUE)
+Beers
+
+Breweries = read.csv("/Users/christywachira/Downloads/Breweries.csv", header = TRUE)
+Breweries
+
+summary(Breweries)
+
+# change column name to match
+names(Breweries)[names(Breweries) == "Brew_ID"] <- "Brewery_id"
+summary(Breweries)
+
+# merge beers and breweries data
+merged_data <- merge(Beers, Breweries, by.x = "Brewery_id", by.y = "Brewery_id", all = TRUE)
+summary(merged_data)
+
+# print first 6 and last 6 rows of the merged dataset *not in presentation*
+head(merged_data)
+tail(merged_data)
+
+#Number of breweries per state
+breweries_per_state <- Breweries %>%
+  dplyr::group_by(State) %>%
+  summarise(num_breweries = n())
+
+summary(breweries_per_state)
+
+# Number of breweries per state histogram
+ggplot(breweries_per_state, aes(x = State, y = num_breweries)) +
+  geom_bar(stat = "identity", fill = "firebrick") +
+  labs(title = "Number of Breweries per State", x = "State", y = "Number of Breweries")+
+  theme(axis.text.x = element_text(size = 5),plot.title = element_text(hjust = 0.5, vjust = 0.5)) 
+
+# Calculate sum of missing values in merged dataset
+missing_values_merged = colSums(is.na(merged_data))
+print(missing_values_merged)
+
+# Calculate percentage of missing values by class
+result <- merged_data %>%
+  group_by(State) %>%
+  summarize(across(everything(), ~mean(is.na(.)) * 100, .names = "Percent_{.col}"))
+
+print(result)
+summary(result)
+result$Percent_IBU
+result$Percent_ABV
+
+#Avg mean ABV
+mean_value <- mean(result$Percent_ABV, na.rm = TRUE)
+
+#  Plot the Percent of ABV Missing Values per State
+ggplot(result, aes(x = State, y = Percent_ABV, fill= "darkred")) +
+  geom_bar(stat = "identity") +
+  labs(title = "Percent of ABV Missing Values per State", x = "State", y = "Percent of ABV Missing Values")+
+  theme(axis.text.x = element_text(size = 5), axis.text.y = element_text(size = 8), axis.title = element_text(size = 10),plot.title = element_text(hjust = 0.5, vjust = 0.5),legend.position = "none")
+
+# Calculate mean IBU values per state
+mean_value <- mean(result$Percent_IBU, na.rm = TRUE)
+
+# Plot the Percent of IBU Missing Values per State
+ggplot(result, aes(x = State, y = Percent_IBU,fill = Percent_IBU > mean_value)) +
+  geom_bar(stat = "identity") + 
+  scale_fill_manual(values = c("blue", "darkblue")) +
+  labs(title = "Percent of IBU Missing Values per State", x = "State", y = "Percent of IBU Missing Values")+
+  theme(axis.text.x = element_text(size = 5), axis.text.y = element_text(size = 8), axis.title = element_text(size = 10),plot.title = element_text(hjust = 0.5, vjust = 0.5),legend.position = "none")+
+  geom_hline(yintercept = mean(result$Percent_IBU, na.rm = TRUE), linetype = "dashed", color = "black")
+
+
+# Calculate the averages of ABV and IBU
+mean_values <- merged_data %>%
+  group_by(State) %>%
+  dplyr::summarise(mean_ABV = mean(ABV, na.rm = TRUE),
+                   mean_IBU = mean(IBU, na.rm = TRUE))
+
+## ABV Imputation 
+# Calculate the overall mean ABV
+overall_mean_ABV <- mean(merged_data$ABV, na.rm = TRUE)
+overall_mean_ABV
+
+# Impute missing ABV values with the overall mean
+merged_data$ABV <- ifelse(is.na(merged_data$ABV), overall_mean_ABV, merged_data$ABV)
+summary(merged_data)
+
+## IBU Imputation
+# Calculate the average percentage of missing "IBU" values
+average_missing_IBU <- mean(result$Percent_IBU)
+average_missing_IBU
+
+# Divide states into groups (above and below average)
+states_above_average <- result$State[result$Percent_IBU > average_missing_IBU]
+states_below_average <- result$State[result$Percent_IBU <= average_missing_IBU]
+print(states_above_average)
+print(states_below_average)
+
+# Calculate mean "IBU" values for each group
+mean_IBU_above_average <- mean(merged_data$IBU[merged_data$State %in% states_above_average], na.rm = TRUE)
+mean_IBU_below_average <- mean(merged_data$IBU[merged_data$State %in% states_below_average], na.rm = TRUE)
+print(mean_IBU_above_average)
+print(mean_IBU_below_average)
+
+# Impute missing "IBU" values in each group with their respective mean values
+merged_data$IBU <- ifelse(merged_data$State %in% states_above_average & is.na(merged_data$IBU), mean_IBU_above_average, merged_data$IBU)
+merged_data$IBU <- ifelse(merged_data$State %in% states_below_average & is.na(merged_data$IBU), mean_IBU_below_average, merged_data$IBU)
+summary(merged_data$IBU)
+
+summary(merged_data)
+
+## Plot a bar chart of for both the median ABV and median IBU per state
+# Create a scatterplot of Alcohol content vs bitterness
+ggplot(merged_data, aes(x = ABV, y = IBU)) +
+  geom_point(color = "steelblue", size = 3) +
+  labs(title = "Alcohol Content vs. Bitterness",
+       x = "ABV", y = "IBU")+theme_minimal() +
+  theme(plot.title = element_text(vjust = 0.5))
+
+# Calculate median ABV and IBU for each state
+median_values <- merged_data %>%
+  group_by(State) %>%
+  dplyr::summarize(median_ABV = median(ABV, na.rm = TRUE),
+            median_IBU = median(IBU, na.rm = TRUE))
+
+median_values
+
+# Ensure that the graphics device is in a valid state
+dev.off()
+
+# Plot a bar chart for the Median Alcohol Content by State
+ggplot(median_values, aes(x = State, y = median_ABV)) +
+  geom_bar(stat = "identity", fill = "firebrick") +
+  geom_hline(yintercept = median(median_values$median_ABV), color = "black", linetype = "dashed") +
+  labs(title = "Median Alcohol Content by State",
+       x = "State",
+       y = "Median ABV") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(size = 5), 
+        axis.title = element_text(size = 10),
+        plot.title = element_text(hjust = 0.5, vjust = 0.5),
+        legend.position = "none")
+
+# Plot a bar chart for the Median International Bitterness Unit by State
+ggplot(median_values, aes(x = State, y = median_IBU)) +
+  geom_bar(stat = "identity", fill = "firebrick") +
+  geom_hline(yintercept = median(median_values$median_IBU), color = "black", linetype = "dashed") +
+  labs(title = "Median International Bitterness Unit by State",
+       x = "State",
+       y = "Median IBU") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(size = 5), 
+        axis.title = element_text(size = 10),
+        plot.title = element_text(hjust = 0.5, vjust = 0.5),
+        legend.position = "none")
+
+# Find the state with the maximum alcoholic (ABV) content
+max_ABV_state <- median_values[which.max(median_values$median_ABV), "State"]
+max_ABV_state
+max_ABV_value <- median_values[which.max(median_values$median_ABV), "median_ABV"]
+max_ABV_value 
+
+# Find the state with the most bitter (IBU) beer
+max_IBU_state <- median_values[which.max(median_values$median_IBU), "State"]
+max_IBU_state
+max_IBU_value <- median_values[which.max(median_values$median_IBU), "median_IBU"] 
+max_IBU_value
+
+# For minimum ABV and IBU values
+min_abv_observation <- merged_data[which.min(merged_data$ABV), ]
+min_abv_observation
+
+min_ibu_observation <- merged_data[which.min(merged_data$IBU), ]
+min_ibu_observation
+
+# For maximum ABV and IBU values
+max_abv_observation <- merged_data[which.max(merged_data$ABV), ]
+max_abv_observation
+
+max_ibu_observation <- merged_data[which.max(merged_data$IBU), ]
+max_ibu_observation
+
+
+## Statistics of ABV and IBU
+# Find the minimum and maximum ABV value and its corresponding state
+min_ABV <- mean_values %>% filter(mean_ABV == min(mean_ABV))
+print(min_ABV)
+
+max_ABV <- mean_values %>% filter(mean_ABV == max(mean_ABV))
+print(max_ABV)
+
+min_IBU <- mean_values %>% filter(mean_IBU == min(mean_IBU))
+print(min_IBU)
+
+max_IBU <- mean_values %>% filter(mean_IBU == max(mean_IBU))
+print(max_IBU)
+
+min_ABV <- median_values %>% filter(median_ABV == min(median_ABV))
+print(min_ABV)
+
+max_ABV <- median_values %>% filter(median_ABV == max(median_ABV))
+print(max_ABV)
+
+min_IBU <- median_values %>% filter(median_IBU == min(median_IBU))
+print(min_IBU)
+
+max_IBU <- median_values %>% filter(median_IBU == max(median_IBU))
+print(max_IBU)
+
+
+## Knn classification
+install.packages("class")
+library(class)
+# Load the caret library
+library(caret)
+
+#Creating new column for IPA vs Ale - normal expression 
+merged_data <- merged_data %>%
+  mutate(IPA_Ale = str_extract(Style, "(?<=\\s)[A-Za-z]{3}$"))
+
+# View the result
+print(merged_data)
+
+#new df only ipa and ale
+IPA_Ale <- na.omit(merged_data)
+
+# View the result
+print(IPA_Ale)
+
+set.seed(6)
+splitPerc <- 0.75
+
+# Split data into training and test sets
+trainIndices <- sample(1:nrow(IPA_Ale), round(splitPerc * nrow(IPA_Ale)))
+train_data <- IPA_Ale[trainIndices, ]
+test_data <- IPA_Ale[-trainIndices, ]
+
+# KNN classification
+classifications <- knn(train_data[, c("ABV", "IBU")], test_data[, c("ABV", "IBU")], train_data$IPA_Ale, prob = TRUE, k = 5)
+
+# Confusion matrix
+confusion_matrix <- table(test_data$IPA_Ale, classifications)
+print(confusion_matrix)
+
+# Compute confusion matrix statistics
+confusion_stats <- confusionMatrix(confusion_matrix)
+print(confusion_stats)
+
+# Convert confusion matrix to a data frame and rename columns
+confusion_df <- as.data.frame.table(confusion_matrix)
+colnames(confusion_df) <- c("True", "Predicted", "Freq")
+
+# Plot the confusion matrix
+ggplot(data = confusion_df,
+       aes(x = Predicted, y = True, fill = Freq)) +
+  geom_tile() +
+  geom_text(aes(label = ifelse(Freq !=0, Freq, "")), vjust = 1) +
+  scale_fill_gradientn(colors = brewer.pal(9, "Blues")) +
+  labs(x = "Predicted", y = "True", title = "Confusion Matrix") +
+  theme_minimal()
+
+# Create a vector of metric names
+metrics <- c("Accuracy", "Sensitivity", "Specificity", "PPV", "NPV")
+
+# Create a vector of metric values for ABV and IBU (replace these values with your actual values)
+values_ABV.IBU <- c(83.81, 85.55, 81.69, 85.06, 82.27)
+
+# Plot the histogram for ABV and IBU statistics
+barplot(values_ABV.IBU, names.arg = metrics, col = "darkblue", main = "Performance Metrics for ABV and IBU", 
+        ylab = "Percentage", ylim = c(0, 100))
+# Add percentage labels to the bars for ABV
+text(x = 1:length(metrics), y = values_ABV.IBU + 2, labels = paste(values_ABV.IBU, "%"), col = "darkblue", cex = 0.8)
+
+# Calculate the center positions for the labels
+center_positions <- barplot(values_ABV.IBU, names.arg = metrics, col = "darkblue", main = "Performance Metrics for ABV and IBU", 
+                            ylab = "Percentage", ylim = c(0, 100))
+# Add percentage labels to the bars for ABV
+text(x = center_positions, y = values_ABV.IBU + 2, labels = paste(values_ABV.IBU, "%"), col = "darkblue", cex = 0.8, pos = 3)
+
+
+## Texas deep dive
+# filter new column for IPAs
+install.packages("gifski")
+
+IPA_only <- IPA_Ale %>% filter(IPA_Ale == "IPA")
+IPA_only
+
+summary(IPA_only)
+
+# filter IPA_only for Texas
+texas <- IPA_only %>% filter(State == " TX")
+texas
+
+# Create an Animated plot of the findings
+animated_plot <- ggplot(IPA_Ale, aes(x = ABV, y = IBU, color = IPA_Ale)) +
+  geom_point() +
+  transition_states(State, transition_length = 1, state_length = 1) +
+  enter_fade() +
+  exit_fade() +
+  geom_text(aes(x = Inf, y = Inf, label = State), hjust = 1.2, vjust = 1.2, size = 6) +
+  labs(title = "Bitterness and Alcohol Content for IPA vs Ale beers", x = "ABV", y = "IBU") +
+  theme_minimal() + guides(color = guide_legend(title = NULL))+
+  guides(color = "none")
+animate(animated_plot, nframes = length(unique(IPA_Ale$State)) * 2, renderer = gifski_renderer(),fps = 3)
+
+
+anim_save("only5.gif")
+
+
+
+
+```
